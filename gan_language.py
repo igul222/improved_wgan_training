@@ -23,8 +23,10 @@ ITERS = 200000 # How many iterations to train for
 SEQ_LEN = 32 # Sequence length in characters
 DIM = 512 # Model dimensionality. This is fairly slow and overfits, even on
           # Billion Word. Consider decreasing for smaller datasets.
-CRITIC_ITERS = 10
-LAMBDA = 10
+CRITIC_ITERS = 10 # How many critic iterations per generator iteration. We
+                  # use 10 for the results in the paper, but 5 should work fine
+                  # as well.
+LAMBDA = 10 # Gradient penalty lambda hyperparameter.
 MAX_N_EXAMPLES = 10000000 # Max number of data examples to load. If data loading
                           # is too slow or takes too much RAM, you can decrease
                           # this (at the expense of having less training data).
