@@ -19,7 +19,7 @@ import tflib.save_images
 import tflib.mnist
 import tflib.plot
 
-MODE = 'wgan' # dcgan, wgan, or wgan-gp
+MODE = 'wgan-gp' # dcgan, wgan, or wgan-gp
 DIM = 64 # Model dimensionality
 BATCH_SIZE = 50 # Batch size
 CRITIC_ITERS = 5 # For WGAN and WGAN-GP, number of critic iters per gen iter
@@ -184,6 +184,8 @@ elif MODE == 'dcgan':
         learning_rate=2e-4, 
         beta1=0.5
     ).minimize(disc_cost, var_list=disc_params)
+
+    clip_disc_weights = None
 
 # For saving samples
 fixed_noise = tf.constant(np.random.normal(size=(128, 128)).astype('float32'))

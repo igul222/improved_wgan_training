@@ -14,7 +14,6 @@ import tflib.ops.conv2d
 import tflib.ops.batchnorm
 import tflib.ops.deconv2d
 import tflib.save_images
-import tflib.lsun_bedrooms
 import tflib.small_imagenet
 import tflib.ops.layernorm
 import tflib.plot
@@ -58,7 +57,8 @@ def GeneratorAndDiscriminator():
     # return MultiplicativeDCGANGenerator, MultiplicativeDCGANDiscriminator
 
     # tanh nonlinearities everywhere
-    # return functools.partial(DCGANGenerator, bn=True, nonlinearity=tf.tanh), functools.partial(DCGANDiscriminator, bn=True, nonlinearity=tf.tanh)
+    # return functools.partial(DCGANGenerator, bn=True, nonlinearity=tf.tanh), \
+    #        functools.partial(DCGANDiscriminator, bn=True, nonlinearity=tf.tanh)
 
     # 101-layer ResNet G and D
     # return ResnetGenerator, ResnetDiscriminator
@@ -123,7 +123,8 @@ def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=Non
     if output_dim==input_dim and resample==None:
         shortcut = inputs # Identity skip-connection
     else:
-        shortcut = conv_shortcut(name+'.Shortcut', input_dim=input_dim, output_dim=output_dim, filter_size=1, he_init=False, biases=True, inputs=inputs)
+        shortcut = conv_shortcut(name+'.Shortcut', input_dim=input_dim, output_dim=output_dim, filter_size=1,
+                                 he_init=False, biases=True, inputs=inputs)
 
     output = inputs
     output = tf.nn.relu(output)
@@ -408,9 +409,12 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as session:
 
             elif MODE == 'dcgan':
                 try: # tf pre-1.0 (bottom) vs 1.0 (top)
-                    gen_cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake, labels=tf.ones_like(disc_fake)))
-                    disc_cost =  tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake, labels=tf.zeros_like(disc_fake)))
-                    disc_cost += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_real, labels=tf.ones_like(disc_real)))                    
+                    gen_cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake,
+                                                                                      labels=tf.ones_like(disc_fake)))
+                    disc_cost =  tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake,
+                                                                                        labels=tf.zeros_like(disc_fake)))
+                    disc_cost += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_real,
+                                                                                        labels=tf.ones_like(disc_real)))                    
                 except Exception as e:
                     gen_cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(disc_fake, tf.ones_like(disc_fake)))
                     disc_cost =  tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(disc_fake, tf.zeros_like(disc_fake)))
@@ -431,8 +435,10 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as session:
     disc_cost = tf.add_n(disc_costs) / len(DEVICES)
 
     if MODE == 'wgan':
-        gen_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(gen_cost, var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
-        disc_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(disc_cost, var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
+        gen_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(gen_cost,
+                                             var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
+        disc_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(disc_cost,
+                                             var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
 
         clip_ops = []
         for var in lib.params_with_name('Discriminator'):
@@ -441,15 +447,22 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as session:
         clip_disc_weights = tf.group(*clip_ops)
 
     elif MODE == 'wgan-gp':
-        gen_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(gen_cost, var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
-        disc_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(disc_cost, var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
+        gen_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(gen_cost,
+                                          var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
+        disc_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(disc_cost,
+                                           var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
+
     elif MODE == 'dcgan':
-        gen_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(gen_cost, var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
-        disc_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(disc_cost, var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
+        gen_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(gen_cost,
+                                          var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
+        disc_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(disc_cost,
+                                           var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
 
     elif MODE == 'lsgan':
-        gen_train_op = tf.train.RMSPropOptimizer(learning_rate=1e-4).minimize(gen_cost, var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
-        disc_train_op = tf.train.RMSPropOptimizer(learning_rate=1e-4).minimize(disc_cost, var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
+        gen_train_op = tf.train.RMSPropOptimizer(learning_rate=1e-4).minimize(gen_cost,
+                                             var_list=lib.params_with_name('Generator'), colocate_gradients_with_ops=True)
+        disc_train_op = tf.train.RMSPropOptimizer(learning_rate=1e-4).minimize(disc_cost,
+                                              var_list=lib.params_with_name('Discriminator.'), colocate_gradients_with_ops=True)
 
     else:
         raise Exception()
