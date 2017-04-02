@@ -1,5 +1,4 @@
 import tflib as lib
-import tflib.debug
 
 import numpy as np
 import tensorflow as tf
@@ -105,6 +104,5 @@ def Conv1D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             result = tf.expand_dims(result, 3)
             result = tf.nn.bias_add(result, _biases, data_format='NCHW')
             result = tf.squeeze(result)
-        # lib.debug.print_stats(name, result)
 
         return result

@@ -1,5 +1,4 @@
 import tflib as lib
-import tflib.debug
 
 import numpy as np
 import tensorflow as tf
@@ -120,6 +119,5 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
 
             result = tf.nn.bias_add(result, _biases, data_format='NCHW')
 
-        # lib.debug.print_stats(name, result)
 
         return result

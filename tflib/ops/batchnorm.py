@@ -1,5 +1,4 @@
 import tflib as lib
-import tflib.debug
 
 import numpy as np
 import tensorflow as tf
@@ -83,5 +82,6 @@ def Batchnorm(name, axes, inputs, is_training=None, stats_iter=None, update_movi
         offset = lib.param(name+'.offset', np.zeros(shape, dtype='float32'))
         scale = lib.param(name+'.scale', np.ones(shape, dtype='float32'))
         result = tf.nn.batch_normalization(inputs, mean, var, offset, scale, 1e-5)
-        # lib.debug.print_stats(name, result)
+
+
         return result

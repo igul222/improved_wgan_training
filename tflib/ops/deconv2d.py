@@ -1,5 +1,4 @@
 import tflib as lib
-import tflib.debug
 
 import numpy as np
 import tensorflow as tf
@@ -112,6 +111,5 @@ def Deconv2D(
 
         result = tf.transpose(result, [0,3,1,2], name='NHWC_to_NCHW')
 
-        # lib.debug.print_stats(name, result)
 
         return result
