@@ -7,10 +7,8 @@ import numpy as np
 import tensorflow as tf
 
 import tflib as lib
-import tflib.debug
 import tflib.ops.linear
 import tflib.ops.conv2d
-import tflib.ops.adamax
 import tflib.ops.batchnorm
 import tflib.ops.deconv2d
 import tflib.save_images
@@ -136,8 +134,8 @@ elif MODE == 'wgan-gp':
     gradient_penalty = tf.reduce_mean((slopes-1.)**2)
     disc_cost += LAMBDA*gradient_penalty
 
-    gen_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(gen_cost, gen_params)
-    disc_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(disc_cost, disc_params)
+    gen_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(gen_cost, var_list=gen_params)
+    disc_train_op = tf.train.AdamOptimizer(learning_rate=1e-4, beta1=0.5, beta2=0.9).minimize(disc_cost, var_list=disc_params)
 
 elif MODE == 'dcgan':
     gen_cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(disc_fake, tf.ones_like(disc_fake)))
@@ -145,8 +143,10 @@ elif MODE == 'dcgan':
     disc_cost += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(disc_real, tf.ones_like(disc_real)))
     disc_cost /= 2.
 
-    gen_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(gen_cost, var_list=lib.params_with_name('Generator'))
-    disc_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(disc_cost, var_list=lib.params_with_name('Discriminator.'))
+    gen_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(gen_cost,
+                                                                                  var_list=lib.params_with_name('Generator'))
+    disc_train_op = tf.train.AdamOptimizer(learning_rate=2e-4, beta1=0.5).minimize(disc_cost,
+                                                                                   var_list=lib.params_with_name('Discriminator.'))
 
 # For generating samples
 fixed_noise_128 = tf.constant(np.random.normal(size=(128, 128)).astype('float32'))
@@ -169,7 +169,7 @@ def get_inception_score():
     return lib.inception_score.get_inception_score(list(all_samples))
 
 # Dataset iterators
-train_gen, dev_gen = lib.cifar10.load(BATCH_SIZE)
+train_gen, dev_gen = lib.cifar10.load(BATCH_SIZE, data_dir=DATA_DIR)
 def inf_train_gen():
     while True:
         for images in train_gen():
