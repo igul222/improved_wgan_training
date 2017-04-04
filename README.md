@@ -1,7 +1,7 @@
 Improved Training of Wasserstein GANs
 =====================================
 
-Code for reproducing experiments in ["Improved Training of Wasserstein GANs"](http://example.com).
+Code for reproducing experiments in ["Improved Training of Wasserstein GANs"](https://arxiv.org/abs/1704.00028).
 
 
 ## Prerequisites
