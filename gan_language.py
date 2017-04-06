@@ -86,7 +86,7 @@ def Discriminator(inputs):
 
 real_inputs_discrete = tf.placeholder(tf.int32, shape=[BATCH_SIZE, SEQ_LEN])
 real_inputs = tf.one_hot(real_inputs_discrete, len(charmap))
-fake_inputs _ = Generator(BATCH_SIZE)
+fake_inputs = Generator(BATCH_SIZE)
 fake_inputs_discrete = tf.argmax(fake_inputs, fake_inputs.get_shape().ndims-1)
 
 disc_real = Discriminator(real_inputs) 
