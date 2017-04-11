@@ -61,7 +61,7 @@ def ResBlock(name, inputs):
 def Generator(n_samples, prev_outputs=None):
     output = make_noise(shape=[n_samples, 128])
     output = lib.ops.linear.Linear('Generator.Input', 128, SEQ_LEN*DIM, output)
-    output = tf.reshape(output, [-1, SETTINGS['dim_g'], SEQ_LEN])
+    output = tf.reshape(output, [-1, DIM, SEQ_LEN])
     output = ResBlock('Generator.1', output)
     output = ResBlock('Generator.2', output)
     output = ResBlock('Generator.3', output)
@@ -127,11 +127,11 @@ def inf_train_gen():
 # During training we monitor JS divergence between the true & generated ngram
 # distributions for n=1,2,3,4. To get an idea of the optimal values, we
 # evaluate these statistics on a held-out set first.
-true_char_ngram_lms = [data_tools.NgramLanguageModel(i+1, lines[10*BATCH_SIZE:], tokenize=False) for i in xrange(4)]
-validation_char_ngram_lms = [data_tools.NgramLanguageModel(i+1, lines[:10*BATCH_SIZE], tokenize=False) for i in xrange(4)]
+true_char_ngram_lms = [language_helpers.NgramLanguageModel(i+1, lines[10*BATCH_SIZE:], tokenize=False) for i in xrange(4)]
+validation_char_ngram_lms = [language_helpers.NgramLanguageModel(i+1, lines[:10*BATCH_SIZE], tokenize=False) for i in xrange(4)]
 for i in xrange(4):
     print "validation set JSD for n={}: {}".format(i+1, true_char_ngram_lms[i].js_with(validation_char_ngram_lms[i]))
-true_char_ngram_lms = [data_tools.NgramLanguageModel(i+1, lines, tokenize=False) for i in xrange(4)]
+true_char_ngram_lms = [language_helpers.NgramLanguageModel(i+1, lines, tokenize=False) for i in xrange(4)]
 
 with tf.Session() as session:
 
@@ -174,7 +174,7 @@ with tf.Session() as session:
                 samples.extend(generate_samples())
 
             for i in xrange(4):
-                lm = data_tools.NgramLanguageModel(i+1, samples, tokenize=False)
+                lm = language_helpers.NgramLanguageModel(i+1, samples, tokenize=False)
                 lib.plot.plot('js{}'.format(i+1), lm.js_with(true_char_ngram_lms[i]))
 
             with open('samples_{}.txt'.format(iteration), 'w') as f:
