@@ -160,7 +160,7 @@ def generate_image(true_dist):
     plt.clf()
 
     x = y = np.linspace(-RANGE, RANGE, N_POINTS)
-    plt.contour(x,y,disc_map.reshape((len(x), len(y))))
+    plt.contour(x,y,disc_map.reshape((len(x), len(y))).transpose())
 
     plt.scatter(true_dist[:, 0], true_dist[:, 1], c='orange',  marker='+')
     plt.scatter(samples[:, 0],    samples[:, 1],    c='green', marker='+')
