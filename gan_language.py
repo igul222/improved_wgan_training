@@ -184,3 +184,5 @@ with tf.Session() as session:
 
         if iteration % 100 == 99:
             lib.plot.flush()
+        
+        lib.plot.tick()
