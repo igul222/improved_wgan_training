@@ -157,12 +157,11 @@ def generate_image(frame, true_dist):
     lib.save_images.save_images(samples.reshape((128, 3, 32, 32)), 'samples_{}.jpg'.format(frame))
 
 # For calculating inception score
-fixed_noise_1024 = tf.constant(np.random.normal(size=(1024, 128)).astype('float32'))
-fixed_noise_samples_1024 = Generator(1024, noise=fixed_noise_1024)
+samples_100 = Generator(100)
 def get_inception_score():
     all_samples = []
     for i in xrange(10):
-        all_samples.append(session.run(fixed_noise_samples_1024))
+        all_samples.append(session.run(samples_100))
     all_samples = np.concatenate(all_samples, axis=0)
     all_samples = ((all_samples+1.)*(255./2)).astype('int32')
     all_samples = all_samples.reshape((-1, 3, 32, 32)).transpose(0,2,3,1)
