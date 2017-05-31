@@ -41,8 +41,11 @@ def GeneratorAndDiscriminator():
     uncommenting one of these lines.
     """
 
+    # For actually generating decent samples, use this one
+    return GoodGenerator, GoodDiscriminator
+
     # Baseline (G: DCGAN, D: DCGAN)
-    return DCGANGenerator, DCGANDiscriminator
+    # return DCGANGenerator, DCGANDiscriminator
 
     # No BN and constant number of filts in G
     # return WGANPaper_CrippledDCGANGenerator, DCGANDiscriminator
@@ -78,7 +81,7 @@ def LeakyReLULayer(name, n_in, n_out, inputs):
     output = lib.ops.linear.Linear(name+'.Linear', n_in, n_out, inputs, initialization='he')
     return LeakyReLU(output)
 
-def Batchnorm(name, axes, inputs):
+def Normalize(name, axes, inputs):
     if ('Discriminator' in name) and (MODE == 'wgan-gp'):
         if axes != [0,2,3]:
             raise Exception('Layernorm over non-standard axes is unsupported')
@@ -97,7 +100,27 @@ def SubpixelConv2D(*args, **kwargs):
     output = tf.transpose(output, [0,3,1,2])
     return output
 
-def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=None, he_init=True):
+def ConvMeanPool(name, input_dim, output_dim, filter_size, inputs, he_init=True, biases=True):
+    output = lib.ops.conv2d.Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=he_init, biases=biases)
+    output = tf.add_n([output[:,:,::2,::2], output[:,:,1::2,::2], output[:,:,::2,1::2], output[:,:,1::2,1::2]]) / 4.
+    return output
+
+def MeanPoolConv(name, input_dim, output_dim, filter_size, inputs, he_init=True, biases=True):
+    output = inputs
+    output = tf.add_n([output[:,:,::2,::2], output[:,:,1::2,::2], output[:,:,::2,1::2], output[:,:,1::2,1::2]]) / 4.
+    output = lib.ops.conv2d.Conv2D(name, input_dim, output_dim, filter_size, output, he_init=he_init, biases=biases)
+    return output
+
+def UpsampleConv(name, input_dim, output_dim, filter_size, inputs, he_init=True, biases=True):
+    output = inputs
+    output = lib.concat([output, output, output, output], axis=1)
+    output = tf.transpose(output, [0,2,3,1])
+    output = tf.depth_to_space(output, 2)
+    output = tf.transpose(output, [0,3,1,2])
+    output = lib.ops.conv2d.Conv2D(name, input_dim, output_dim, filter_size, output, he_init=he_init, biases=biases)
+    return output
+
+def BottleneckResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=None, he_init=True):
     """
     resample: None, 'down', or 'up'
     """
@@ -133,11 +156,66 @@ def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=Non
     output = conv_1b(name+'.Conv1B', filter_size=filter_size, inputs=output, he_init=he_init, weightnorm=False)
     output = tf.nn.relu(output)
     output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init, weightnorm=False, biases=False)
-    output = Batchnorm(name+'.BN', [0,2,3], output)
+    output = Normalize(name+'.BN', [0,2,3], output)
 
     return shortcut + (0.3*output)
 
+def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=None, he_init=True):
+    """
+    resample: None, 'down', or 'up'
+    """
+    if resample=='down':
+        conv_shortcut = MeanPoolConv
+        conv_1        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim, output_dim=input_dim)
+        conv_2        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim, output_dim=output_dim)
+    elif resample=='up':
+        conv_shortcut = UpsampleConv
+        conv_1        = functools.partial(UpsampleConv, input_dim=input_dim, output_dim=output_dim)
+        conv_2        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=output_dim, output_dim=output_dim)
+    elif resample==None:
+        conv_shortcut = lib.ops.conv2d.Conv2D
+        conv_1        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim,  output_dim=input_dim)
+        conv_2        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim, output_dim=output_dim)
+    else:
+        raise Exception('invalid resample value')
+
+    if output_dim==input_dim and resample==None:
+        shortcut = inputs # Identity skip-connection
+    else:
+        shortcut = conv_shortcut(name+'.Shortcut', input_dim=input_dim, output_dim=output_dim, filter_size=1,
+                                 he_init=False, biases=True, inputs=inputs)
+
+    output = inputs
+    output = Normalize(name+'.BN1', [0,2,3], output)
+    output = tf.nn.relu(output)
+    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init, weightnorm=False, biases=False)
+    output = Normalize(name+'.BN2', [0,2,3], output)
+    output = tf.nn.relu(output)
+    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init, weightnorm=False)
+
+    return shortcut + output
+
+
 # ! Generators
+
+def GoodGenerator(n_samples, noise=None, dim=DIM, nonlinearity=tf.nn.relu):
+    if noise is None:
+        noise = tf.random_normal([n_samples, 128])
+
+    output = lib.ops.linear.Linear('Generator.Input', 128, 4*4*8*dim, noise)
+    output = tf.reshape(output, [-1, 8*dim, 4, 4])
+
+    output = ResidualBlock('Generator.Res1', 8*dim, 8*dim, 3, output, resample='up')
+    output = ResidualBlock('Generator.Res2', 8*dim, 4*dim, 3, output, resample='up')
+    output = ResidualBlock('Generator.Res3', 2*dim, 2*dim, 3, output, resample='up')
+    output = ResidualBlock('Generator.Res4', 2*dim, 1*dim, 3, output, resample='up')
+
+    output = Normalize('Generator.OutputN', output)
+    output = tf.nn.relu(output)
+    output = lib.ops.conv2d.Conv2D('Generator.Output', 1*dim, 3, 3, output)
+    output = tf.tanh(output)
+
+    return tf.reshape(output, [-1, OUTPUT_DIM])
 
 def FCGenerator(n_samples, noise=None, FC_DIM=512):
     if noise is None:
@@ -164,22 +242,22 @@ def DCGANGenerator(n_samples, noise=None, dim=DIM, bn=True, nonlinearity=tf.nn.r
     output = lib.ops.linear.Linear('Generator.Input', 128, 4*4*8*dim, noise)
     output = tf.reshape(output, [-1, 8*dim, 4, 4])
     if bn:
-        output = Batchnorm('Generator.BN1', [0,2,3], output)
+        output = Normalize('Generator.BN1', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.deconv2d.Deconv2D('Generator.2', 8*dim, 4*dim, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN2', [0,2,3], output)
+        output = Normalize('Generator.BN2', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.deconv2d.Deconv2D('Generator.3', 4*dim, 2*dim, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN3', [0,2,3], output)
+        output = Normalize('Generator.BN3', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.deconv2d.Deconv2D('Generator.4', 2*dim, dim, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN4', [0,2,3], output)
+        output = Normalize('Generator.BN4', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.deconv2d.Deconv2D('Generator.5', dim, 3, 5, output)
@@ -221,19 +299,19 @@ def ResnetGenerator(n_samples, noise=None, dim=DIM):
     output = tf.reshape(output, [-1, 8*dim, 4, 4])
 
     for i in xrange(6):
-        output = ResidualBlock('Generator.4x4_{}'.format(i), 8*dim, 8*dim, 3, output, resample=None)
-    output = ResidualBlock('Generator.Up1', 8*dim, 4*dim, 3, output, resample='up')
+        output = BottleneckResidualBlock('Generator.4x4_{}'.format(i), 8*dim, 8*dim, 3, output, resample=None)
+    output = BottleneckResidualBlock('Generator.Up1', 8*dim, 4*dim, 3, output, resample='up')
     for i in xrange(6):
-        output = ResidualBlock('Generator.8x8_{}'.format(i), 4*dim, 4*dim, 3, output, resample=None)
-    output = ResidualBlock('Generator.Up2', 4*dim, 2*dim, 3, output, resample='up')
+        output = BottleneckResidualBlock('Generator.8x8_{}'.format(i), 4*dim, 4*dim, 3, output, resample=None)
+    output = BottleneckResidualBlock('Generator.Up2', 4*dim, 2*dim, 3, output, resample='up')
     for i in xrange(6):
-        output = ResidualBlock('Generator.16x16_{}'.format(i), 2*dim, 2*dim, 3, output, resample=None)
-    output = ResidualBlock('Generator.Up3', 2*dim, 1*dim, 3, output, resample='up')
+        output = BottleneckResidualBlock('Generator.16x16_{}'.format(i), 2*dim, 2*dim, 3, output, resample=None)
+    output = BottleneckResidualBlock('Generator.Up3', 2*dim, 1*dim, 3, output, resample='up')
     for i in xrange(6):
-        output = ResidualBlock('Generator.32x32_{}'.format(i), 1*dim, 1*dim, 3, output, resample=None)
-    output = ResidualBlock('Generator.Up4', 1*dim, dim/2, 3, output, resample='up')
+        output = BottleneckResidualBlock('Generator.32x32_{}'.format(i), 1*dim, 1*dim, 3, output, resample=None)
+    output = BottleneckResidualBlock('Generator.Up4', 1*dim, dim/2, 3, output, resample='up')
     for i in xrange(5):
-        output = ResidualBlock('Generator.64x64_{}'.format(i), dim/2, dim/2, 3, output, resample=None)
+        output = BottleneckResidualBlock('Generator.64x64_{}'.format(i), dim/2, dim/2, 3, output, resample=None)
 
     output = lib.ops.conv2d.Conv2D('Generator.Out', dim/2, 3, 1, output, he_init=False)
     output = tf.tanh(output / 5.)
@@ -248,22 +326,22 @@ def MultiplicativeDCGANGenerator(n_samples, noise=None, dim=DIM, bn=True):
     output = lib.ops.linear.Linear('Generator.Input', 128, 4*4*8*dim*2, noise)
     output = tf.reshape(output, [-1, 8*dim*2, 4, 4])
     if bn:
-        output = Batchnorm('Generator.BN1', [0,2,3], output)
+        output = Normalize('Generator.BN1', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.deconv2d.Deconv2D('Generator.2', 8*dim, 4*dim*2, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN2', [0,2,3], output)
+        output = Normalize('Generator.BN2', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.deconv2d.Deconv2D('Generator.3', 4*dim, 2*dim*2, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN3', [0,2,3], output)
+        output = Normalize('Generator.BN3', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.deconv2d.Deconv2D('Generator.4', 2*dim, dim*2, 5, output)
     if bn:
-        output = Batchnorm('Generator.BN4', [0,2,3], output)
+        output = Normalize('Generator.BN4', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.deconv2d.Deconv2D('Generator.5', dim, 3, 5, output)
@@ -273,6 +351,20 @@ def MultiplicativeDCGANGenerator(n_samples, noise=None, dim=DIM, bn=True):
 
 # ! Discriminators
 
+def GoodDiscriminator(inputs, dim=DIM):
+    output = tf.reshape(inputs, [-1, 3, 64, 64])
+    output = lib.ops.conv2d.Conv2D('Discriminator.Input', 3, dim, 3, output, he_init=False)
+
+    output = ResidualBlock('Discriminator.Res1', dim, 2*dim, 3, output, resample='down')
+    output = ResidualBlock('Discriminator.Res2', 2*dim, 4*dim, 3, output, resample='down')
+    output = ResidualBlock('Discriminator.Res3', 4*dim, 8*dim, 3, output, resample='down')
+    output = ResidualBlock('Discriminator.Res4', 8*dim, 8*dim, 3, output, resample='down')
+
+    output = tf.reshape(output, [-1, 4*4*8*dim])
+    output = lib.ops.linear.Linear('Discriminator.Output', 4*4*8*dim, 1, output)
+
+    return tf.reshape(output, [-1])
+
 def MultiplicativeDCGANDiscriminator(inputs, dim=DIM, bn=True):
     output = tf.reshape(inputs, [-1, 3, 64, 64])
 
@@ -281,17 +373,17 @@ def MultiplicativeDCGANDiscriminator(inputs, dim=DIM, bn=True):
 
     output = lib.ops.conv2d.Conv2D('Discriminator.2', dim, 2*dim*2, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN2', [0,2,3], output)
+        output = Normalize('Discriminator.BN2', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.conv2d.Conv2D('Discriminator.3', 2*dim, 4*dim*2, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN3', [0,2,3], output)
+        output = Normalize('Discriminator.BN3', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = lib.ops.conv2d.Conv2D('Discriminator.4', 4*dim, 8*dim*2, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN4', [0,2,3], output)
+        output = Normalize('Discriminator.BN4', [0,2,3], output)
     output = pixcnn_gated_nonlinearity(output[:,::2], output[:,1::2])
 
     output = tf.reshape(output, [-1, 4*4*8*dim])
@@ -305,19 +397,19 @@ def ResnetDiscriminator(inputs, dim=DIM):
     output = lib.ops.conv2d.Conv2D('Discriminator.In', 3, dim/2, 1, output, he_init=False)
 
     for i in xrange(5):
-        output = ResidualBlock('Discriminator.64x64_{}'.format(i), dim/2, dim/2, 3, output, resample=None)
-    output = ResidualBlock('Discriminator.Down1', dim/2, dim*1, 3, output, resample='down')
+        output = BottleneckResidualBlock('Discriminator.64x64_{}'.format(i), dim/2, dim/2, 3, output, resample=None)
+    output = BottleneckResidualBlock('Discriminator.Down1', dim/2, dim*1, 3, output, resample='down')
     for i in xrange(6):
-        output = ResidualBlock('Discriminator.32x32_{}'.format(i), dim*1, dim*1, 3, output, resample=None)
-    output = ResidualBlock('Discriminator.Down2', dim*1, dim*2, 3, output, resample='down')
+        output = BottleneckResidualBlock('Discriminator.32x32_{}'.format(i), dim*1, dim*1, 3, output, resample=None)
+    output = BottleneckResidualBlock('Discriminator.Down2', dim*1, dim*2, 3, output, resample='down')
     for i in xrange(6):
-        output = ResidualBlock('Discriminator.16x16_{}'.format(i), dim*2, dim*2, 3, output, resample=None)
-    output = ResidualBlock('Discriminator.Down3', dim*2, dim*4, 3, output, resample='down')
+        output = BottleneckResidualBlock('Discriminator.16x16_{}'.format(i), dim*2, dim*2, 3, output, resample=None)
+    output = BottleneckResidualBlock('Discriminator.Down3', dim*2, dim*4, 3, output, resample='down')
     for i in xrange(6):
-        output = ResidualBlock('Discriminator.8x8_{}'.format(i), dim*4, dim*4, 3, output, resample=None)
-    output = ResidualBlock('Discriminator.Down4', dim*4, dim*8, 3, output, resample='down')
+        output = BottleneckResidualBlock('Discriminator.8x8_{}'.format(i), dim*4, dim*4, 3, output, resample=None)
+    output = BottleneckResidualBlock('Discriminator.Down4', dim*4, dim*8, 3, output, resample='down')
     for i in xrange(6):
-        output = ResidualBlock('Discriminator.4x4_{}'.format(i), dim*8, dim*8, 3, output, resample=None)
+        output = BottleneckResidualBlock('Discriminator.4x4_{}'.format(i), dim*8, dim*8, 3, output, resample=None)
 
     output = tf.reshape(output, [-1, 4*4*8*dim])
     output = lib.ops.linear.Linear('Discriminator.Output', 4*4*8*dim, 1, output)
@@ -345,17 +437,17 @@ def DCGANDiscriminator(inputs, dim=DIM, bn=True, nonlinearity=LeakyReLU):
 
     output = lib.ops.conv2d.Conv2D('Discriminator.2', dim, 2*dim, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN2', [0,2,3], output)
+        output = Normalize('Discriminator.BN2', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.conv2d.Conv2D('Discriminator.3', 2*dim, 4*dim, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN3', [0,2,3], output)
+        output = Normalize('Discriminator.BN3', [0,2,3], output)
     output = nonlinearity(output)
 
     output = lib.ops.conv2d.Conv2D('Discriminator.4', 4*dim, 8*dim, 5, output, stride=2)
     if bn:
-        output = Batchnorm('Discriminator.BN4', [0,2,3], output)
+        output = Normalize('Discriminator.BN4', [0,2,3], output)
     output = nonlinearity(output)
 
     output = tf.reshape(output, [-1, 4*4*8*dim])
@@ -493,9 +585,9 @@ with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as session:
 
     # Save a batch of ground-truth samples
     _x = inf_train_gen().next()
-    _x_r = session.run(real_data, feed_dict={real_data_conv: _x})
+    _x_r = session.run(real_data, feed_dict={real_data_conv: _x[:BATCH_SIZE/N_GPUS]})
     _x_r = ((_x_r+1.)*(255.99/2)).astype('int32')
-    lib.save_images.save_images(_x_r.reshape((BATCH_SIZE, 3, 64, 64)), 'samples_groundtruth.png')
+    lib.save_images.save_images(_x_r.reshape((BATCH_SIZE/N_GPUS, 3, 64, 64)), 'samples_groundtruth.png')
 
 
     # Train loop
