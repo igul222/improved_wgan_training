@@ -113,7 +113,7 @@ def MeanPoolConv(name, input_dim, output_dim, filter_size, inputs, he_init=True,
 
 def UpsampleConv(name, input_dim, output_dim, filter_size, inputs, he_init=True, biases=True):
     output = inputs
-    output = lib.concat([output, output, output, output], axis=1)
+    output = tf.concat([output, output, output, output], axis=1)
     output = tf.transpose(output, [0,2,3,1])
     output = tf.depth_to_space(output, 2)
     output = tf.transpose(output, [0,3,1,2])
@@ -151,11 +151,11 @@ def BottleneckResidualBlock(name, input_dim, output_dim, filter_size, inputs, re
 
     output = inputs
     output = tf.nn.relu(output)
-    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init, weightnorm=False)
+    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init)
     output = tf.nn.relu(output)
-    output = conv_1b(name+'.Conv1B', filter_size=filter_size, inputs=output, he_init=he_init, weightnorm=False)
+    output = conv_1b(name+'.Conv1B', filter_size=filter_size, inputs=output, he_init=he_init)
     output = tf.nn.relu(output)
-    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init, weightnorm=False, biases=False)
+    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init, biases=False)
     output = Normalize(name+'.BN', [0,2,3], output)
 
     return shortcut + (0.3*output)
@@ -167,7 +167,7 @@ def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=Non
     if resample=='down':
         conv_shortcut = MeanPoolConv
         conv_1        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim, output_dim=input_dim)
-        conv_2        = functools.partial(lib.ops.conv2d.Conv2D, input_dim=input_dim, output_dim=output_dim)
+        conv_2        = functools.partial(ConvMeanPool, input_dim=input_dim, output_dim=output_dim)
     elif resample=='up':
         conv_shortcut = UpsampleConv
         conv_1        = functools.partial(UpsampleConv, input_dim=input_dim, output_dim=output_dim)
@@ -188,10 +188,10 @@ def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=Non
     output = inputs
     output = Normalize(name+'.BN1', [0,2,3], output)
     output = tf.nn.relu(output)
-    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init, weightnorm=False, biases=False)
+    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init, biases=False)
     output = Normalize(name+'.BN2', [0,2,3], output)
     output = tf.nn.relu(output)
-    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init, weightnorm=False)
+    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init)
 
     return shortcut + output
 
@@ -207,10 +207,10 @@ def GoodGenerator(n_samples, noise=None, dim=DIM, nonlinearity=tf.nn.relu):
 
     output = ResidualBlock('Generator.Res1', 8*dim, 8*dim, 3, output, resample='up')
     output = ResidualBlock('Generator.Res2', 8*dim, 4*dim, 3, output, resample='up')
-    output = ResidualBlock('Generator.Res3', 2*dim, 2*dim, 3, output, resample='up')
+    output = ResidualBlock('Generator.Res3', 4*dim, 2*dim, 3, output, resample='up')
     output = ResidualBlock('Generator.Res4', 2*dim, 1*dim, 3, output, resample='up')
 
-    output = Normalize('Generator.OutputN', output)
+    output = Normalize('Generator.OutputN', [0,2,3], output)
     output = tf.nn.relu(output)
     output = lib.ops.conv2d.Conv2D('Generator.Output', 1*dim, 3, 3, output)
     output = tf.tanh(output)
