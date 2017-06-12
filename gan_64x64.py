@@ -188,10 +188,10 @@ def ResidualBlock(name, input_dim, output_dim, filter_size, inputs, resample=Non
     output = inputs
     output = Normalize(name+'.BN1', [0,2,3], output)
     output = tf.nn.relu(output)
-    output = conv_1(name+'.Conv1', filter_size=1, inputs=output, he_init=he_init, biases=False)
+    output = conv_1(name+'.Conv1', filter_size=filter_size, inputs=output, he_init=he_init, biases=False)
     output = Normalize(name+'.BN2', [0,2,3], output)
     output = tf.nn.relu(output)
-    output = conv_2(name+'.Conv2', filter_size=1, inputs=output, he_init=he_init)
+    output = conv_2(name+'.Conv2', filter_size=filter_size, inputs=output, he_init=he_init)
 
     return shortcut + output
 
