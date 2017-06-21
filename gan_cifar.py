@@ -171,7 +171,7 @@ def get_inception_score():
 train_gen, dev_gen = lib.cifar10.load(BATCH_SIZE, data_dir=DATA_DIR)
 def inf_train_gen():
     while True:
-        for images in train_gen():
+        for images,_ in train_gen():
             yield images
 
 # Train loop
@@ -206,7 +206,7 @@ with tf.Session() as session:
         # Calculate dev loss and generate samples every 100 iters
         if iteration % 100 == 99:
             dev_disc_costs = []
-            for images in dev_gen():
+            for images,_ in dev_gen():
                 _dev_disc_cost = session.run(disc_cost, feed_dict={real_data_int: images}) 
                 dev_disc_costs.append(_dev_disc_cost)
             lib.plot.plot('dev disc cost', np.mean(dev_disc_costs))
