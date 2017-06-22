@@ -172,7 +172,7 @@ def Discriminator(inputs, labels):
     output = tf.reduce_mean(output, axis=[2,3])
     output_wgan = lib.ops.linear.Linear('Discriminator.Output', DIM_D, 1, output)
     output_wgan = tf.reshape(output_wgan, [-1])
-    if ACGAN:
+    if CONDITIONAL and ACGAN:
         output_acgan = lib.ops.linear.Linear('Discriminator.ACGANOutput', DIM_D, 10, output)
         return output_wgan, output_acgan
     else:
@@ -220,7 +220,7 @@ with tf.Session() as session:
             disc_real = disc_all[:BATCH_SIZE/len(DEVICES_A)]
             disc_fake = disc_all[BATCH_SIZE/len(DEVICES_A):]
             disc_costs.append(tf.reduce_mean(disc_fake) - tf.reduce_mean(disc_real))
-            if ACGAN:
+            if CONDITIONAL and ACGAN:
                 disc_acgan_costs.append(tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=disc_all_acgan[:BATCH_SIZE/len(DEVICES_A)], labels=real_and_fake_labels[:BATCH_SIZE/len(DEVICES_A)])
                 ))
@@ -265,7 +265,7 @@ with tf.Session() as session:
             disc_costs.append(gradient_penalty)
 
     disc_wgan = tf.add_n(disc_costs) / len(DEVICES_A)
-    if ACGAN:
+    if CONDITIONAL and ACGAN:
         disc_acgan = tf.add_n(disc_acgan_costs) / len(DEVICES_A)
         disc_acgan_acc = tf.add_n(disc_acgan_accs) / len(DEVICES_A)
         disc_acgan_fake_acc = tf.add_n(disc_acgan_fake_accs) / len(DEVICES_A)
@@ -289,7 +289,7 @@ with tf.Session() as session:
         with tf.device(device):
             n_samples = GEN_BS_MULTIPLE * BATCH_SIZE / len(DEVICES)
             fake_labels = tf.cast(tf.random_uniform([n_samples])*10, tf.int32)
-            if ACGAN:
+            if CONDITIONAL and ACGAN:
                 disc_fake, disc_fake_acgan = Discriminator(Generator(n_samples,fake_labels), fake_labels)
                 gen_costs.append(-tf.reduce_mean(disc_fake))
                 gen_acgan_costs.append(tf.reduce_mean(
@@ -298,7 +298,7 @@ with tf.Session() as session:
             else:
                 gen_costs.append(-tf.reduce_mean(Discriminator(Generator(n_samples, fake_labels), fake_labels)[0]))
     gen_cost = (tf.add_n(gen_costs) / len(DEVICES))
-    if ACGAN:
+    if CONDITIONAL and ACGAN:
         gen_cost += (ACGAN_SCALE_G*(tf.add_n(gen_acgan_costs) / len(DEVICES)))
 
 
@@ -370,13 +370,13 @@ with tf.Session() as session:
 
         for i in xrange(N_CRITIC):
             _data,_labels = gen.next()
-            if ACGAN:
+            if CONDITIONAL and ACGAN:
                 _disc_cost, _disc_wgan, _disc_acgan, _disc_acgan_acc, _disc_acgan_fake_acc, _ = session.run([disc_cost, disc_wgan, disc_acgan, disc_acgan_acc, disc_acgan_fake_acc, disc_train_op], feed_dict={all_real_data_int: _data, all_real_labels:_labels, _iteration:iteration})
             else:
                 _disc_cost, _ = session.run([disc_cost, disc_train_op], feed_dict={all_real_data_int: _data, all_real_labels:_labels, _iteration:iteration})
 
         lib.plot.plot('cost', _disc_cost)
-        if ACGAN:
+        if CONDITIONAL and ACGAN:
             lib.plot.plot('wgan', _disc_wgan)
             lib.plot.plot('acgan', _disc_acgan)
             lib.plot.plot('acc_real', _disc_acgan_acc)
